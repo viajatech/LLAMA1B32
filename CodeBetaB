@@ -1,4 +1,6 @@
 #pip install transformers torch langdetect
+#pip install --upgrade torch transformers
+
 
 
 import tkinter as tk
