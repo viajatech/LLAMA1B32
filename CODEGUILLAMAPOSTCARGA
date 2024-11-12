@@ -1,0 +1,122 @@
+#David Ruiz (@viajatech) 
+
+#pip install transformers torch tkinter
+#pip install --upgrade transformers torch
+#pip install transformers torch tkinter huggingface_hub
+
+
+
+#Recuerda editar y poner tu token de Hugging Face!! el token que debes copiar es el de READ, primero crealo!!!!
+
+
+import tkinter as tk
+from tkinter import scrolledtext
+from tkinter import ttk
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+import threading
+
+# Token de acceso personal de Hugging Face
+HF_TOKEN = "PON AQUI TU TOKEN READ!!!!"
+
+# Configurar dispositivo (GPU si está disponible)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Variables globales para el modelo y el tokenizador
+model = None
+tokenizer = None
+model_name = "meta-llama/Llama-3.2-1B"
+
+def load_model():
+    global model, tokenizer
+    status_label.config(text="Cargando el modelo, por favor espera...")
+    progress_bar.start()
+
+    try:
+        # Cargar el tokenizador y el modelo
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_name,
+            use_auth_token=HF_TOKEN,
+            trust_remote_code=True
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            use_auth_token=HF_TOKEN,
+            torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+            device_map="auto",
+            trust_remote_code=True
+        )
+        model.to(device)
+        status_label.config(text="Modelo cargado. ¡Ya puedes chatear!")
+    except Exception as e:
+        status_label.config(text=f"Error al cargar el modelo: {e}")
+    finally:
+        progress_bar.stop()
+        send_button.config(state=tk.NORMAL)
+        user_entry.config(state=tk.NORMAL)
+
+def generate_response():
+    user_input = user_entry.get()
+    user_entry.delete(0, tk.END)
+    chat_log.config(state=tk.NORMAL)
+    chat_log.insert(tk.END, "Tú: " + user_input + "\n")
+    chat_log.config(state=tk.DISABLED)
+    chat_log.see(tk.END)
+
+    # Función para ejecutar en hilo separado
+    def run_model():
+        with torch.no_grad():
+            input_ids = tokenizer.encode(user_input, return_tensors='pt').to(device)
+            generated_ids = model.generate(
+                input_ids,
+                max_new_tokens=150,
+                no_repeat_ngram_size=3,
+                do_sample=True,
+                top_k=50,
+                top_p=0.95,
+                temperature=0.8,
+                eos_token_id=tokenizer.eos_token_id,
+                pad_token_id=tokenizer.eos_token_id
+            )
+            response = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
+            generated_text = response[len(user_input):].strip()
+            chat_log.config(state=tk.NORMAL)
+            chat_log.insert(tk.END, "Bot: " + generated_text + "\n\n")
+            chat_log.config(state=tk.DISABLED)
+            chat_log.see(tk.END)
+
+    # Crear y empezar hilo para generar la respuesta
+    threading.Thread(target=run_model).start()
+
+# Configuración de la interfaz gráfica
+root = tk.Tk()
+root.title("Chat by Viaja Tech")
+root.configure(bg='black')
+
+# Establecer tamaño de ventana (ancho x alto)
+root.geometry('800x600')
+
+# Área de chat con scroll
+chat_log = scrolledtext.ScrolledText(root, state=tk.DISABLED, bg='black', fg='white', wrap=tk.WORD)
+chat_log.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+
+# Campo de entrada de usuario
+user_entry = tk.Entry(root, width=100, bg='gray20', fg='white', state=tk.DISABLED)
+user_entry.pack(padx=10, pady=(0,10), fill=tk.X)
+
+# Botón enviar
+send_button = tk.Button(root, text="Enviar", command=generate_response, bg='gray30', fg='white', state=tk.DISABLED)
+send_button.pack(pady=(0,10))
+
+# Etiqueta de estado y barra de progreso
+status_label = tk.Label(root, text="Iniciando...", bg='black', fg='white')
+status_label.pack(pady=(0,5))
+
+progress_bar = ttk.Progressbar(root, mode='indeterminate')
+progress_bar.pack(padx=10, fill=tk.X)
+
+# Iniciar carga del modelo en un hilo separado
+threading.Thread(target=load_model).start()
+
+# Iniciar la interfaz gráfica
+root.mainloop()
